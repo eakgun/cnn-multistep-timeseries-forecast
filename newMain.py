@@ -31,32 +31,28 @@ tempData = tempData['2018':'2019']
 
 
 
-WINDOW_WIDTH = 168
-FORECAST_LENGTH = 30
-batchSize = 1000
-predictHorizon = 60
-no_epochs = 50
 
 
+#Gotta include these in hyperparam optimization 
+WINDOW_WIDTH = 156
+FORECAST_LENGTH = 15
+# batchSize = 1024
+predictHorizon = 72
+no_epochs = 60
 predThreshold = WINDOW_WIDTH + FORECAST_LENGTH + 1
-predThreshold = 400
-
-
 temp = tempData['2018':'2019'][:-predThreshold]
 to_pred = tempData['2018':'2019'][-predThreshold:]
+# predThreshold = WINDOW_WIDTH + FORECAST_LENGTH + 1
 
-temp = temp.dropna()
-to_pred = to_pred.dropna()
-# temp = temp[::6]
 
 #----------------ADF TEST  ----------------------------------------------------------------
 
-if TSMethods.stationarity_test(temp, return_p=True, print_res = False) > 0.05:
-    print("P Value is high. Consider Differencing: " + str(TSMethods.stationarity_test(temp, 
-                                                                                       return_p = True,
-                                                                                       print_res = False)))
-else:
-    TSMethods.stationarity_test(temp)
+# if TSMethods.stationarity_test(temp, return_p=True, print_res = False) > 0.05:
+#     print("P Value is high. Consider Differencing: " + str(TSMethods.stationarity_test(temp, 
+#                                                                                        return_p = True,
+#                                                                                        print_res = False)))
+# else:
+#     TSMethods.stationarity_test(temp)
 
 
 #------------------------------------------------------------------------------------------------
@@ -80,18 +76,31 @@ def df_to_X_y(df, window_size, forecast_length):
         
     return np.array(X), np.array(y)
 
+X, y = df_to_X_y(temp, WINDOW_WIDTH, FORECAST_LENGTH)
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=1)
 
 #------------------------------------------------------------------------------------------------
-
-
+# def dataPrep(WINDOW_WIDTH, FORECAST_LENGTH):
+    
+#     predThreshold = WINDOW_WIDTH + FORECAST_LENGTH + 1
+   
+#     temp = tempData['2018':'2019'][:-predThreshold]
+#     to_pred = tempData['2018':'2019'][-predThreshold:]
+    
+#     X, y = df_to_X_y(temp, WINDOW_WIDTH, FORECAST_LENGTH)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+#     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
+    
+#     return X_train, X_test, y_train, y_test, X_val, y_val, temp, to_pred, X, y
 
 
 # filePath = './saved_models/CNN_cp3.h5'
 
-X, y = df_to_X_y(temp, WINDOW_WIDTH, FORECAST_LENGTH)
+# X, y = df_to_X_y(temp, WINDOW_WIDTH, FORECAST_LENGTH)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+# X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
 
 # X_train[:,:,0] = normalize(X_train[:,:,0])
 
@@ -103,103 +112,124 @@ from keras.callbacks import ReduceLROnPlateau, ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from keras.losses import MeanSquaredError
 from keras.metrics import RootMeanSquaredError
+import keras.backend as K
+import keras_tuner as kt
 
+class MyHyperModel(kt.HyperModel):
+     
+     
 
-
-def trainModel(neuron,path):
-
-    rlrop = ReduceLROnPlateau(monitor='val_loss', factor=0.001, patience=100)
-    model = Sequential()
-    
-
-    # model.add(LSTM(input_shape = X_train.shape[1:], units=125, return_sequences=True))
-    model.add(Conv1D(filters = neuron, kernel_size=5, activation='relu', input_shape = X_train.shape[1:]))
-    model.add(MaxPooling1D(pool_size=5))
-    
-    model.add(Flatten())
-    # model.add(Conv1D(filters = 250, kernel_size=5, activation='relu', input_shape = X_train.shape[1:]))
-    # model.add(MaxPooling1D(pool_size=5))
-    # model.add(Flatten())
-
-    # model.add(LeakyReLU(alpha=0.3))
-
-
-    # model.add(LSTM(units=64, return_sequences=True))
-    # model.add(LSTM(units=100))
-    # model.add(Dropout(rate=0.2))
-    model.add(Dense(1000, activation='relu'))
-
-
- 
-    # model.add(Dense(FORECAST_LENGTH, activation='relu'))
-
-    model.add(Dense(units=FORECAST_LENGTH, activation='linear'))
-
-    # model.summary()
-    # Adam(learning_rate=0.001)
-    model.compile(optimizer=Adam(learning_rate=0.001), 
-                metrics=['accuracy'] , 
-                loss=MeanSquaredError())
-
-    save_weights_at = path
-    save_best = ModelCheckpoint(save_weights_at, monitor='val_loss', verbose=0,
-                            save_best_only=True, save_weights_only=False, mode='min')
-
-
-    history = model.fit(X_train, 
-                        y_train, 
-                        validation_data=(X_val,y_val), 
-                        epochs=no_epochs,
-                        batch_size=batchSize,
-                        callbacks=[save_best, rlrop],
-                        shuffle=True,
-                        verbose=0)
-    return history, model, save_best
-
-
-#----------- TRAINING and MODEL SELECTION -----------------
-
-history_list = []
-bestModel = []
-scores = []
-pathList = []
-cnt = 0
-patCount = 0
-patience = 4
-for i in range(100,2000,1):
-    
-    filePathTemp = f'./saved_models/CNN_save{i}.h5'
-    history, model, best = trainModel(i, filePathTemp)
-    model.reset_states()
-    pathList.append(filePathTemp)
-    save_model(model, filePathTemp)
-    history_list.append(history)
-    bestModel.append(best)
-    score = model.evaluate(X_test, y_test, verbose = 1)
-    scores.append(score)
-    if cnt > patience:
-        if score[0] > scores[-(patience+patCount)][0]:
-            patCount = patCount + 1  
-            if patCount >= patience:
-                history = history_list[-(patience+1)]
-                score = scores[-patience-1]
-                modelIndex = i
-                model = load_model(pathList[-patience-1], compile=True) 
-                
-                break
-        else:
-            patCount = 0 
-    cnt = cnt + 1 
         
-print(f'Test loss: {score[0]} / Test accuracy: {score[1]}',
-         f'For {i} no of neurons')
-   
-#--------------------------------------------
+     
+     
+            
+    def build(self, hp):
+        
+        model = Sequential()
+        model.add(Conv1D(filters = 125, kernel_size=5, activation='relu', 
+                         input_shape = X_train.shape[1:]))
+        model.add(MaxPooling1D(pool_size=5))
+        model.add(Flatten())
+        for i in range(hp.Int("layers", min_value=1, max_value=5, step=1)):
+            model.add(
+                Dense(
+                    units=hp.Int("units_" + str(i), min_value=32, max_value=1024, step=32),
+                    activation=hp.Choice('act_'+ str(i), ['relu','linear']),
+                )
+            )
+        model.add(Dense(FORECAST_LENGTH, activation="linear"))
+        model.compile(
+            optimizer=Adam(learning_rate=hp.Float("lr", min_value=1e-4, max_value=1e-2, sampling="log")), 
+            loss="mse",
+            metrics=["accuracy"],
+        )
+        return model
 
+    def fit(self, hp, model, *args, **kwargs):
+        return model.fit(
+            *args,
+            batch_size=hp.Int("batch_size", min_value=32, max_value=1024, step=32),
+            shuffle = hp.Boolean("shuffle"),
+            **kwargs,
+            )
+
+
+
+#
+# tuner = kt.RandomSearch(
+#     hypermodel=build_model,
+#     objective="val_accuracy",
+#     max_trials=10,
+#     executions_per_trial=2,
+#     overwrite=True,
+#     directory="hyperParams",
+#     project_name="HPS",
+# )    
+
+
+
+# tuner = kt.BayesianOptimization(
+#     hypermodel=MyHyperModel(),
+#     objective="val_accuracy",
+#     max_trials=20,
+#     executions_per_trial=2,
+#     overwrite=True,
+#     directory="hyperParams",
+#     project_name="HPS"
+# )    
+
+tuner = kt.Hyperband(
+    MyHyperModel(),
+    objective = 'val_accuracy',
+    max_epochs = 7,
+    factor=3,
+    hyperband_iterations=2,
+    
+    directory='HPS3',
+    project_name="WORKTHISTIME2",
+    overwrite=True
+)
+
+
+
+
+    
+tuner.search_space_summary()
+
+
+
+tuner.search(X_train, y_train, validation_data=(X_val,y_val) , epochs=5, verbose=2)
+models = tuner.get_best_models(num_models=1)
+best_model = models[0]
+# Build the model.
+# Needed for `Sequential` without specified `input_shape`.
+
+# reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
+#                             patience=5, min_lr=0.001)
+
+hypermodel = MyHyperModel()
+best_hp = tuner.get_best_hyperparameters()[0]
+model = hypermodel.build(best_hp)
+history = hypermodel.fit(best_hp, model, 
+                         X_train, y_train,
+                         validation_data=(X_val, y_val),
+                         epochs=no_epochs)
+
+
+# history = model.fit(X_train, 
+#                     y_train, 
+#                     validation_data=(X_val,y_val), 
+#                     epochs=no_epochs,
+#                     # batch_size=batchSize,
+#                     # callbacks=[reduce_lr],
+#                     verbose=1)
 
 
 sns.set_theme(style="darkgrid")
 sns.set(rc = {'figure.figsize':(20,10)})
+
+
+
 
 plt.figure(2)
 plt.plot(history.history['loss'], color = 'red', label='Loss')
@@ -217,11 +247,17 @@ plt.legend(['Loss', 'Val_loss'], loc='upper right')
 
 #load ze modél 
 
-   
+
+
+
+
+
+
+    
 
 train_pred = model.predict(X_train).flatten()
 
-test_pred = model.predict(X_test).flatten()
+# test_pred = model.predict(X_test).flatten()
 
 
 
@@ -229,7 +265,7 @@ test_pred = model.predict(X_test).flatten()
 #X[len(X)//2:].flatten()
 
 train_results = pd.DataFrame(data={'Actual':y_train.flatten() , 'Prediction':train_pred})
-test_results = pd.DataFrame(data={'Actual':y_test.flatten() , 'Prediction':test_pred})
+# test_results = pd.DataFrame(data={'Actual':y_test.flatten() , 'Prediction':test_pred})
 sns.set(rc = {'figure.figsize':(20,10)})
 plt.figure(3)
 sns.lineplot(data=train_results[0:100])
@@ -237,7 +273,7 @@ sns.lineplot(data=train_results[0:100])
 
 plt.figure(1)
 train_results[:168].plot()
-test_results[:168].plot()
+# test_results[:168].plot()
 plt.show()
 #Future Forecast
 
@@ -302,9 +338,9 @@ print('MSE OF THE FORECAST: ',MSE,
       'MAX ERROR: ', forecast_error[maxIndex], '°C',
       'WINDOW WITDH: ', WINDOW_WIDTH,
       'FORWARD WITDH: ', FORECAST_LENGTH, 
-      'Batch Size: ', batchSize)
+      'Batch Size: ', 'tbd')
 
-
+K.clear_session()
 
 # future = np.array(future)
 # plt.figure(2)
@@ -314,3 +350,7 @@ print('MSE OF THE FORECAST: ',MSE,
 
 #after processing a sequence, reset the states for safety
 # model.reset_states()
+
+
+
+
