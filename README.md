@@ -5,3 +5,8 @@ Improved CNN architecture for multistep univariate/multivariate timeseries forec
 
 
 Figure above is the 60hr temperature forecast using the model. The model was trained with 2 years of hourly temperature data. Compared with LSTMs Temporal CNNs proved superior for this particular timeseries data in forecasting.  
+
+
+
+### Keras_lec.pptx
+This project has been used to give a special lecture to computer engineering students about the Keras framework. 
