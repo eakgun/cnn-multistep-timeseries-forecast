@@ -9,4 +9,4 @@ Figure above is the 60hr temperature forecast using the model. The model was tra
 
 
 ### Keras_lec.pptx
-This project has been used to give a special lecture to computer engineering students about the Keras framework. 
+This project has also been used to give a special lecture to computer engineering students about the Keras framework. 
